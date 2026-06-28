@@ -2,65 +2,119 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Project: HyraX AI Wrist Device
+## Project: HyraX — One AI. Three Devices. One Ecosystem.
 
-HyraX is a personal AI ecosystem centered on a wrist-worn device. The project has three layers:
-- **Dashboard** — browser-based control center (`dashboard/index.html`)
-- **Firmware** — to be written for the wrist device MCU (not yet in repo)
-- **Hardware CAD** — OpenSCAD case design (`Old design CAD/hyrax_case.scad`)
+HyraX is a unified AI ecosystem for smart wearable/ambient gadgets. The hub repo contains:
+- **`hyraX_ai_core.py`** — Python AI orchestrator (the "brain")
+- **`dashboard/index.html`** — Browser-based control center
+- **`Old design CAD/`** — OpenSCAD wrist case design + STL exports
 
-## Environment Constraints
+Planned satellite repos: `HyraX-Device1` (Smart Display), `HyraX-Device2` (Wearable Band), `HyraX-Device3` (Smart Speaker).
 
-- **No Node.js, no Python** on the dev machine. No build step or package manager.
-- Dashboard is a **single standalone HTML file** using CDN scripts (Three.js r128 from cdnjs).
-- Dev server is a PowerShell HTTP listener defined in `.claude/launch.json`, serving on **port 5500**.
-- To preview: `mcp__Claude_Preview__preview_start` with name `"HyraX Dashboard"`, or just open `dashboard/index.html` directly in Chrome/Edge.
+---
 
-## Dashboard Architecture (`dashboard/index.html`)
+## Python AI Core (`hyraX_ai_core.py`)
 
-All UI, logic, and state live in one file. Key sections (marked with `// ═══` comments):
+Async Python (3.10+). No external dependencies beyond stdlib in the current stub; real usage adds an LLM SDK.
 
-| Section | What it does |
+**Architecture — four nested layers:**
+
+```
+HyraXCore (singleton orchestrator)
+└── EventBus (async pub/sub backbone)
+└── IntentEngine (LLM/NLP wrapper)
+└── DeviceConnector (abstract interface per gadget)
+```
+
+| Class | Role |
 |---|---|
-| `THREE.JS BG` | Animated particle field + wireframe icosahedron + orbit rings. Togglable via `toggle3D()`. |
-| `DEVICE DRAWER` | Slides in from the right when the HyraX Band dock slot is clicked. Contains stats, OLED preview, device controls, quick actions. |
-| `DEVICE DOCK` | Fixed bottom bar — clickable device slots (wrist band + future device placeholders). |
-| `AI HERO` | Central panel: Hyra orb, audio waveform strip, chat interface. |
-| `SIMULATION` | `startSim()` auto-fires if no physical device. Drives all live stats via `setInterval`. |
-| `DEVICE CONNECTION` | `connectDevice()` — tries `navigator.serial.requestPort()` (WebSerial), falls back to sim. |
-| `OLED` | `drawOLED(mode)` renders to a `<canvas>` scaled 2× (renders at 384×192, displayed at 192×96). Modes: `clock`, `vitals`, `ai`. Redraws every 500 ms. |
-| `WAVEFORM` | Real mic via `getUserMedia` + `AnalyserNode`, or animated sine simulation. |
-| `ECOSYSTEM MINI` | Small animated node-graph canvas in the right panel. `requestAnimationFrame` loop. |
-| `CHAT` | Stateless — `aiReplies[]` array rotates. No backend. Future: wire to Claude API. |
-| `MEMORY` | DOM-only. Future: persist to `localStorage` or IndexedDB. |
+| `HyraXCore` | Singleton. Registers devices, routes `handle_input()` through `IntentEngine`, dispatches actions via `_dispatch_actions()`, publishes `AI_RESPONSE` events. |
+| `EventBus` | Pub/sub. `subscribe(EventType, handler)` + `async publish(HyraXEvent)`. History capped at 50. |
+| `IntentEngine` | LLM wrapper. `_call_llm()` is the swap point — replace the stub with Anthropic/OpenAI/Gemini SDK. `_infer_intent()` keyword-matches to 6 intents. |
+| `DeviceConnector` | ABC. Each gadget implements `connect()`, `disconnect()`, `send_command()`, `read_sensors()`. Calls `emit()` to put events on the bus. |
+| `StubDevice` | Simulates any device for testing without hardware. |
 
-## Hardware Stack
+**Entry point for bootstrap:**
+```python
+core = create_hyraX_ecosystem(api_key="sk-...")  # wires 3 StubDevices
+await core.start()
+response = await core.handle_input("Play jazz", DeviceType.DEVICE_2)
+await core.stop()
+```
+
+**Device types:** `DEVICE_1` = Smart Display · `DEVICE_2` = Wearable Band · `DEVICE_3` = Smart Speaker
+
+**Event types:** `VOICE_INPUT` · `SENSOR_DATA` · `AI_RESPONSE` · `COMMAND` · `STATUS_UPDATE` · `SYNC_REQUEST` · `ERROR`
+
+**Plugging in a real LLM:** replace `IntentEngine._call_llm()`. The Anthropic SDK call would be:
+```python
+import anthropic
+client = anthropic.Anthropic(api_key=self._api_key)
+msg = client.messages.create(model="claude-sonnet-4-6", max_tokens=1024,
+    system=self.SYSTEM_PROMPT, messages=self._context)
+return msg.content[0].text
+```
+
+**Known issue:** `hyraX_ai_core.py` has inconsistent indentation (mixed 2-space/6-space blocks from the original file). Fix before running: `python -m py_compile hyraX_ai_core.py`.
+
+---
+
+## Dashboard (`dashboard/index.html`)
+
+Single standalone HTML file — no build step, no Node.js, no Python. CDN: Three.js r128.
+
+**Served via** PowerShell HTTP listener on **port 5500** (`.claude/launch.json`). Open with `mcp__Claude_Preview__preview_start` name `"HyraX Dashboard"`, or open the file directly in Chrome/Edge.
+
+**Layout:** 3-row grid — `nav (54px) | main (AI hero + right panel) | dock (130px)`.
+
+Key JS sections (marked `// ═══`):
+
+| Section | Notes |
+|---|---|
+| `THREE.JS BG` | Particle field + icosahedron + rings. `toggle3D()` kills the RAF loop. |
+| `DEVICE DRAWER` | Slides in from right when dock slot is clicked. `openDrawer()` / `closeDrawer()`. |
+| `DEVICE DOCK` | Bottom bar. HyraX Band slot + 3 future placeholder slots. |
+| `SIMULATION` | `startSim()` — `setInterval` at 1 s driving all stats. Auto-fires when WebSerial unavailable. |
+| `DEVICE CONNECTION` | `connectDevice()` tries `navigator.serial.requestPort()` (Chrome/Edge only), falls back to sim. |
+| `OLED` | `drawOLED(mode)` on a 384×192 canvas displayed at 192×96 (2× pixel scale). Modes: `clock`/`vitals`/`ai`. |
+| `WAVEFORM` | Real mic via `getUserMedia` + `AnalyserNode`; animated sine fallback. |
+| `CHAT` | Stateless `aiReplies[]` rotation. Wire to `hyraX_ai_core.py` or Claude API for real responses. |
+
+**WebSerial protocol** (115200 baud, newline-delimited JSON from RP2040):
+```json
+{"batt": 85, "temp": 28.5, "mic": -42, "hr": 72}
+```
+
+---
+
+## Hardware (Wearable Band — Device 2)
 
 | Component | Role | Interface |
 |---|---|---|
-| RP2040 (USB-C board) | Main MCU | USB Serial (115200 baud) |
-| MAX4466 mic breakout | Voice input | Analog |
-| MAX98357A I2S amp | Audio output | I2S |
-| SSD1306 OLED 128×64 | Display | I2C |
-| TP4056 USB-C charger | Battery charging | — |
-| 602030 LiPo 500mAh | Power | — |
-| 15mm round speaker | Audio output | — |
+| RP2040 (USB-C) | MCU | USB Serial @ 115200 |
+| MAX4466 | Microphone | Analog ADC |
+| MAX98357A | I2S audio amp | I2S |
+| SSD1306 128×64 | OLED display | I2C |
+| TP4056 | LiPo charger | USB-C |
+| 602030 500 mAh LiPo | Power | — |
+| 15 mm speaker | Audio output | — |
 
-Expected JSON from firmware over USB serial: `{"batt":85,"temp":28.5,"mic":-42,"hr":72}`
+---
 
-## CAD Design
+## CAD (`Old design CAD/hyrax_case.scad`)
 
-`Old design CAD/hyrax_case.scad` — OpenSCAD. Set `part = "shell" | "diffuser" | "back" | "preview"` at the top.  
-Key dimensions: 45 mm OD, 2 mm wall, 16 mm shell height, 32 mm display bezel.  
-STL exports: `hyrax_shell.stl`, `hyrax_back.stl`, `hyrax_diffuser.stl`.
+OpenSCAD — set `part = "shell" | "diffuser" | "back" | "preview"` at top of file.
+Key dims: 45 mm OD · 2 mm wall · 16 mm height · 32 mm display bezel.
+STL exports already committed: `hyrax_shell.stl`, `hyrax_back.stl`, `hyrax_diffuser.stl`.
 
-## WebSerial Protocol
+---
 
-The dashboard connects to the RP2040 at 115200 baud. `parseDeviceLine()` parses newline-delimited JSON. Each JSON key maps directly to a stat field. Unknown lines are printed to the connection log as-is.
+## Roadmap (from README)
 
-## Planned Next Steps (not yet built)
-
-- MicroPython firmware for RP2040 (serial JSON output + voice pipeline)
-- Claude API integration for real AI chat responses
-- IndexedDB persistence for memory bank
-- OTA firmware flash from dashboard
+- [ ] Real LLM integration in `IntentEngine._call_llm()`
+- [ ] RP2040 MicroPython firmware (serial JSON + voice pipeline)
+- [ ] `HyraX-Device1/2/3` satellite repos
+- [ ] `ecosystem.yaml` shared config
+- [ ] Persistent cross-device AI memory (IndexedDB in dashboard; shared store in core)
+- [ ] OTA firmware flash from dashboard
+- [ ] Mobile companion app
