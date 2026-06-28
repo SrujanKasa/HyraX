@@ -1,0 +1,764 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HyraX Band — Device Center</title>
+  <style>
+    :root {
+      --cyan:   #22d3ee;
+      --blue:   #3b82f6;
+      --violet: #8b5cf6;
+      --green:  #10b981;
+      --red:    #ef4444;
+      --amber:  #f59e0b;
+      --text:   #e2e8f0;
+      --muted:  #64748b;
+      --border: rgba(99,179,237,0.15);
+      --glass:  rgba(5,12,30,0.72);
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { width: 100%; height: 100%; overflow: hidden; font-family: 'Segoe UI', system-ui, sans-serif; color: var(--text); background: #000; }
+
+    /* ─── VIDEO BG ─── */
+    #vid-bg {
+      position: fixed; inset: 0; z-index: 0;
+      width: 100%; height: 100%; object-fit: cover;
+      opacity: 0; transition: opacity 1.2s ease;
+    }
+    #vid-bg.ready { opacity: 1; }
+
+    /* Dark cinematic overlay */
+    #overlay {
+      position: fixed; inset: 0; z-index: 1;
+      background: linear-gradient(
+        135deg,
+        rgba(0,0,0,0.75) 0%,
+        rgba(3,7,18,0.55) 40%,
+        rgba(0,0,0,0.8) 100%
+      );
+    }
+
+    /* ─── ENTRY ANIMATION ─── */
+    #page {
+      position: relative; z-index: 2;
+      width: 100vw; height: 100vh;
+      display: grid;
+      grid-template-rows: 58px 1fr 90px;
+      grid-template-areas: "topbar" "body" "bottombar";
+      opacity: 0;
+      animation: pageIn 0.8s 0.3s cubic-bezier(.4,0,.2,1) forwards;
+    }
+    @keyframes pageIn {
+      from { opacity: 0; transform: translateY(16px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ─── TOP BAR ─── */
+    #topbar {
+      grid-area: topbar;
+      display: flex; align-items: center; gap: 16px;
+      padding: 0 24px;
+      background: rgba(0,0,0,0.55);
+      backdrop-filter: blur(20px);
+      border-bottom: 1px solid var(--border);
+    }
+    .back-btn {
+      display: flex; align-items: center; gap: 8px;
+      padding: 7px 14px; border-radius: 8px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.05);
+      color: var(--muted); font-size: 12px; font-weight: 600;
+      cursor: pointer; transition: all 0.2s;
+      text-decoration: none;
+    }
+    .back-btn:hover { border-color: var(--cyan); color: var(--cyan); background: rgba(34,211,238,0.06); }
+    .back-arrow { font-size: 14px; }
+
+    .tb-device-name { font-size: 16px; font-weight: 800; color: var(--cyan); text-shadow: 0 0 20px rgba(34,211,238,0.5); }
+    .tb-device-sub  { font-size: 10px; color: var(--muted); letter-spacing: 1px; margin-top: 1px; }
+    .tb-spacer { flex: 1; }
+
+    .tb-pill {
+      font-size: 10px; font-weight: 700; padding: 3px 10px;
+      border-radius: 20px; letter-spacing: 1px; text-transform: uppercase;
+    }
+    .pill-sim  { background: rgba(245,158,11,0.15); color: var(--amber); border: 1px solid rgba(245,158,11,0.3); }
+    .pill-live { background: rgba(16,185,129,0.12);  color: var(--green); border: 1px solid rgba(16,185,129,0.3); }
+
+    #tb-clock { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; letter-spacing: 1px; }
+
+    /* ─── BODY ─── */
+    #body {
+      grid-area: body;
+      display: grid;
+      grid-template-columns: 280px 1fr 300px;
+      gap: 0;
+      overflow: hidden;
+    }
+
+    /* ─── Glass panel mixin ─── */
+    .panel {
+      background: var(--glass);
+      backdrop-filter: blur(24px);
+      border-right: 1px solid var(--border);
+      overflow-y: auto; padding: 18px;
+      display: flex; flex-direction: column; gap: 16px;
+    }
+    .panel::-webkit-scrollbar { width: 3px; }
+    .panel::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+    .panel.right { border-right: none; border-left: 1px solid var(--border); }
+
+    /* ─── Section labels ─── */
+    .sec-label {
+      font-size: 9px; font-weight: 800; letter-spacing: 2.5px;
+      text-transform: uppercase; color: var(--muted);
+      display: flex; align-items: center; gap: 8px;
+    }
+    .sec-dot { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; }
+
+    /* ─── Stats grid ─── */
+    .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .stat-box {
+      background: rgba(0,0,0,0.35); border: 1px solid var(--border);
+      border-radius: 10px; padding: 11px 12px;
+      transition: border-color 0.2s;
+    }
+    .stat-box:hover { border-color: rgba(34,211,238,0.3); }
+    .stat-lbl { font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+    .stat-val { font-size: 22px; font-weight: 800; margin-top: 3px; font-variant-numeric: tabular-nums; line-height: 1; }
+    .stat-unit { font-size: 11px; color: var(--muted); font-weight: 400; }
+    .batt-track { height: 3px; background: rgba(255,255,255,0.07); border-radius: 2px; margin-top: 7px; overflow: hidden; }
+    .batt-fill  { height: 100%; border-radius: 2px; transition: width 0.6s ease; }
+
+    /* ─── OLED ─── */
+    .oled-wrap {
+      background: #000; border: 2px solid #0c1020;
+      border-radius: 8px; width: 216px; height: 108px;
+      margin: 0 auto; overflow: hidden;
+      box-shadow: 0 0 40px rgba(0,200,255,0.08), inset 0 0 20px rgba(0,0,0,0.6);
+    }
+    #oled-canvas {
+      width: 432px; height: 216px;
+      transform: scale(0.5); transform-origin: top left;
+      image-rendering: pixelated;
+    }
+    .oled-modes { display: flex; gap: 6px; justify-content: center; margin-top: 8px; }
+    .oled-btn {
+      padding: 4px 12px; border-radius: 6px; font-size: 10px; font-weight: 700;
+      border: 1px solid var(--border); background: transparent; color: var(--muted);
+      cursor: pointer; transition: all 0.2s;
+    }
+    .oled-btn.active, .oled-btn:hover { border-color: var(--cyan); color: var(--cyan); background: rgba(34,211,238,0.07); }
+
+    /* ─── CENTER: Battery ring + waveform ─── */
+    #center-panel {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 20px; padding: 24px;
+      position: relative;
+    }
+
+    /* Animated connection ring */
+    .conn-ring {
+      position: relative; width: 200px; height: 200px;
+    }
+    .conn-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+    .ring-track { fill: none; stroke: rgba(255,255,255,0.06); stroke-width: 8; }
+    .ring-fill  { fill: none; stroke: url(#ringGrad); stroke-width: 8; stroke-linecap: round; transition: stroke-dashoffset 1s ease; }
+    .ring-center {
+      position: absolute; inset: 0;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 2px;
+    }
+    .ring-pct   { font-size: 38px; font-weight: 900; color: var(--cyan); text-shadow: 0 0 30px rgba(34,211,238,0.6); font-variant-numeric: tabular-nums; }
+    .ring-lbl   { font-size: 10px; color: var(--muted); letter-spacing: 2px; text-transform: uppercase; }
+    .ring-icon  { font-size: 20px; margin-bottom: 4px; }
+
+    /* Waveform */
+    .wave-wrap {
+      width: 100%; max-width: 480px;
+      background: rgba(0,0,0,0.3); border: 1px solid var(--border);
+      border-radius: 10px; overflow: hidden; position: relative;
+    }
+    #wave-canvas { width: 100%; height: 56px; display: block; }
+    .wave-lbl {
+      position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
+      font-size: 9px; font-weight: 700; letter-spacing: 2px; color: var(--cyan); opacity: 0.6; pointer-events: none;
+    }
+    .mic-toggle {
+      position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+      padding: 4px 12px; border-radius: 6px; font-size: 10px; font-weight: 700;
+      border: 1px solid var(--cyan); background: rgba(34,211,238,0.08); color: var(--cyan);
+      cursor: pointer; transition: all 0.2s;
+    }
+    .mic-toggle:hover { background: rgba(34,211,238,0.18); }
+
+    /* Metric rows */
+    .metric { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.04); }
+    .metric:last-child { border-bottom: none; }
+    .metric-l { font-size: 12px; color: var(--muted); }
+    .metric-v { font-size: 12px; font-weight: 700; }
+    canvas.spark { width: 100%; height: 32px; border-radius: 4px; margin-top: 4px; }
+
+    /* Toggles */
+    .tog-row { display: flex; align-items: center; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid rgba(255,255,255,0.04); }
+    .tog-row:last-child { border-bottom: none; }
+    .tog-info .tog-l { font-size: 12px; }
+    .tog-info .tog-s { font-size: 10px; color: var(--muted); margin-top: 1px; }
+    .tog { width: 38px; height: 20px; border-radius: 10px; background: rgba(255,255,255,0.08); position: relative; cursor: pointer; transition: background .3s; flex-shrink: 0; }
+    .tog.on { background: var(--cyan); }
+    .tog::after { content:''; position:absolute; width:16px; height:16px; background:#fff; border-radius:50%; top:2px; left:2px; transition:transform .3s; box-shadow:0 1px 3px rgba(0,0,0,.4); }
+    .tog.on::after { transform:translateX(18px); }
+
+    /* Quick actions */
+    .qa-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+    .qa-btn {
+      padding: 10px 8px; border-radius: 9px; border: 1px solid var(--border);
+      background: rgba(0,0,0,0.25); color: var(--text);
+      cursor: pointer; font-size: 10px; font-weight: 700; text-align: center;
+      transition: all 0.2s; letter-spacing: 0.3px;
+    }
+    .qa-btn .ic { font-size: 18px; display: block; margin-bottom: 3px; }
+    .qa-btn:hover { border-color: var(--cyan); background: rgba(34,211,238,0.06); transform: translateY(-1px); }
+    .qa-btn:active { transform: translateY(0); }
+
+    /* Conn log */
+    .conn-log { max-height: 70px; overflow-y: auto; margin-top: 4px; }
+    .conn-log::-webkit-scrollbar { display: none; }
+    .log-l { font-size: 10px; font-family: 'Courier New', monospace; color: var(--muted); padding: 1px 0; }
+    .log-l .ts { color: rgba(99,179,237,0.4); margin-right: 5px; }
+    .log-l.ok .m { color: var(--green); }
+    .log-l.err .m { color: var(--red); }
+    .log-l.inf .m { color: var(--cyan); }
+
+    /* Connect button */
+    .conn-btn {
+      width: 100%; padding: 10px; border-radius: 9px; font-size: 13px; font-weight: 700;
+      border: 1px solid var(--cyan); background: rgba(34,211,238,0.08); color: var(--cyan);
+      cursor: pointer; transition: all 0.2s; letter-spacing: 0.5px;
+    }
+    .conn-btn:hover { background: rgba(34,211,238,0.18); box-shadow: 0 0 20px rgba(34,211,238,0.25); }
+    .conn-btn.connected { border-color: var(--green); background: rgba(16,185,129,0.08); color: var(--green); }
+
+    /* ─── BOTTOM BAR ─── */
+    #bottombar {
+      grid-area: bottombar;
+      background: rgba(0,0,0,0.6); backdrop-filter: blur(20px);
+      border-top: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: center; gap: 32px;
+      padding: 0 24px;
+    }
+    .bb-stat { text-align: center; }
+    .bb-stat-v { font-size: 20px; font-weight: 800; font-variant-numeric: tabular-nums; }
+    .bb-stat-l { font-size: 9px; color: var(--muted); letter-spacing: 1.5px; text-transform: uppercase; margin-top: 2px; }
+    .bb-div { width: 1px; height: 36px; background: var(--border); }
+
+    /* ─── TOAST ─── */
+    #toast {
+      position: fixed; bottom: 100px; left: 50%; transform: translateX(-50%) translateY(20px);
+      background: rgba(34,211,238,0.1); border: 1px solid rgba(34,211,238,0.3);
+      color: var(--cyan); padding: 10px 20px; border-radius: 8px;
+      font-size: 12px; font-weight: 600; backdrop-filter: blur(12px);
+      opacity: 0; transition: all 0.3s; pointer-events: none; white-space: nowrap; z-index: 99;
+    }
+    #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    /* ─── VIDEO END OVERLAY ─── */
+    #vid-end-tint {
+      position: fixed; inset: 0; z-index: 1;
+      background: rgba(0,0,0,0);
+      transition: background 1.5s ease;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+
+<!-- Video background -->
+<video id="vid-bg" src="device-intro.mp4" muted playsinline preload="auto"></video>
+<div id="overlay"></div>
+<div id="vid-end-tint"></div>
+
+<div id="page">
+
+  <!-- ── TOP BAR ── -->
+  <div id="topbar">
+    <a class="back-btn" href="index.html">
+      <span class="back-arrow">←</span> Dashboard
+    </a>
+    <div>
+      <div class="tb-device-name">HyraX Band</div>
+      <div class="tb-device-sub">RP2040 · USB-C · v0.1.0</div>
+    </div>
+    <div class="tb-spacer"></div>
+    <span class="tb-pill pill-sim" id="status-pill">● SIM MODE</span>
+    <span id="tb-clock"></span>
+  </div>
+
+  <!-- ── BODY ── -->
+  <div id="body">
+
+    <!-- LEFT: Connection + OLED + Stats -->
+    <div class="panel left">
+
+      <div class="sec-label"><div class="sec-dot" style="background:var(--cyan)"></div>Connection</div>
+      <button class="conn-btn" id="conn-btn" onclick="connectDevice()">⚡ Connect via USB Serial</button>
+      <div class="conn-log" id="conn-log"></div>
+
+      <div class="sec-label"><div class="sec-dot" style="background:var(--blue)"></div>OLED Preview · 128 × 64</div>
+      <div class="oled-wrap"><canvas id="oled-canvas" width="432" height="216"></canvas></div>
+      <div class="oled-modes">
+        <button class="oled-btn active" onclick="setOled('clock',this)">Clock</button>
+        <button class="oled-btn" onclick="setOled('vitals',this)">Vitals</button>
+        <button class="oled-btn" onclick="setOled('ai',this)">AI</button>
+      </div>
+
+      <div class="sec-label"><div class="sec-dot" style="background:var(--amber)"></div>Live Stats</div>
+      <div class="stat-grid">
+        <div class="stat-box">
+          <div class="stat-lbl">Battery</div>
+          <div class="stat-val" id="batt-v" style="color:var(--green)">--<span class="stat-unit">%</span></div>
+          <div class="batt-track"><div class="batt-fill" id="batt-fill" style="width:0%;background:var(--green)"></div></div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-lbl">Signal</div>
+          <div class="stat-val" id="sig-v" style="color:var(--cyan)">--<span class="stat-unit">dBm</span></div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-lbl">Uptime</div>
+          <div class="stat-val" id="up-v" style="color:var(--blue)">--<span class="stat-unit">m</span></div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-lbl">CPU Temp</div>
+          <div class="stat-val" id="ct-v" style="color:var(--amber)">--<span class="stat-unit">°C</span></div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- CENTER: Battery ring + waveform -->
+    <div id="center-panel">
+
+      <div class="conn-ring">
+        <svg viewBox="0 0 200 200">
+          <defs>
+            <linearGradient id="ringGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%"   stop-color="#22d3ee"/>
+              <stop offset="100%" stop-color="#8b5cf6"/>
+            </linearGradient>
+          </defs>
+          <circle class="ring-track" cx="100" cy="100" r="88"/>
+          <circle class="ring-fill" id="ring-fill" cx="100" cy="100" r="88"
+            stroke-dasharray="553" stroke-dashoffset="553"/>
+        </svg>
+        <div class="ring-center">
+          <div class="ring-icon">🔋</div>
+          <div class="ring-pct" id="ring-pct">--</div>
+          <div class="ring-lbl">Battery</div>
+        </div>
+      </div>
+
+      <div class="wave-wrap" style="width:100%;max-width:440px">
+        <canvas id="wave-canvas"></canvas>
+        <span class="wave-lbl">AUDIO IN</span>
+        <button class="mic-toggle" id="mic-btn" onclick="toggleMic()">🎙 OFF</button>
+      </div>
+
+    </div>
+
+    <!-- RIGHT: Vitals + Controls + Actions -->
+    <div class="panel right">
+
+      <div class="sec-label"><div class="sec-dot" style="background:var(--red)"></div>Vitals Monitor</div>
+      <div class="metric"><span class="metric-l">❤ Heart Rate</span><span class="metric-v" id="hr-v" style="color:var(--red)">-- bpm</span></div>
+      <div class="metric"><span class="metric-l">🌡 Skin Temp</span><span class="metric-v" id="sk-v" style="color:var(--amber)">-- °C</span></div>
+      <div class="metric"><span class="metric-l">🎙 Mic Level</span><span class="metric-v" id="ml-v" style="color:var(--violet)">-- dB</span></div>
+      <div class="metric"><span class="metric-l">📶 BLE Pkts</span><span class="metric-v" id="pk-v" style="color:var(--cyan)">--</span></div>
+      <canvas class="spark" id="hr-spark"></canvas>
+
+      <div class="sec-label"><div class="sec-dot" style="background:var(--violet)"></div>Device Controls</div>
+      <div class="tog-row">
+        <div class="tog-info"><div class="tog-l">Microphone</div><div class="tog-s">MAX4466 · always on</div></div>
+        <div class="tog on" onclick="togCtrl(this,'Microphone')"></div>
+      </div>
+      <div class="tog-row">
+        <div class="tog-info"><div class="tog-l">Speaker</div><div class="tog-s">MAX98357A · I2S</div></div>
+        <div class="tog on" onclick="togCtrl(this,'Speaker')"></div>
+      </div>
+      <div class="tog-row">
+        <div class="tog-info"><div class="tog-l">OLED Display</div><div class="tog-s">SSD1306 · I2C</div></div>
+        <div class="tog on" onclick="togCtrl(this,'OLED')"></div>
+      </div>
+      <div class="tog-row">
+        <div class="tog-info"><div class="tog-l">AI Wake Word</div><div class="tog-s">"Hey Hyra"</div></div>
+        <div class="tog" onclick="togCtrl(this,'Wake Word')"></div>
+      </div>
+      <div class="tog-row">
+        <div class="tog-info"><div class="tog-l">USB Serial</div><div class="tog-s">WebSerial bridge</div></div>
+        <div class="tog" onclick="togCtrl(this,'USB Serial')"></div>
+      </div>
+
+      <div class="sec-label"><div class="sec-dot" style="background:var(--amber)"></div>Quick Actions</div>
+      <div class="qa-grid">
+        <button class="qa-btn" onclick="qa('Wake Device','🔔')"><span class="ic">🔔</span>Wake</button>
+        <button class="qa-btn" onclick="qa('Sleep Mode','😴')"><span class="ic">😴</span>Sleep</button>
+        <button class="qa-btn" onclick="qa('Flash OTA','⚡')"><span class="ic">⚡</span>Flash OTA</button>
+        <button class="qa-btn" onclick="qa('Soft Reset','🔄')"><span class="ic">🔄</span>Reset</button>
+        <button class="qa-btn" onclick="qa('Announce','📢')"><span class="ic">📢</span>Announce</button>
+        <button class="qa-btn" onclick="qa('Locate Me','📍')"><span class="ic">📍</span>Locate</button>
+      </div>
+
+    </div>
+
+  </div>
+
+  <!-- ── BOTTOM BAR ── -->
+  <div id="bottombar">
+    <div class="bb-stat">
+      <div class="bb-stat-v" id="bb-batt" style="color:var(--green)">--%</div>
+      <div class="bb-stat-l">Battery</div>
+    </div>
+    <div class="bb-div"></div>
+    <div class="bb-stat">
+      <div class="bb-stat-v" id="bb-hr" style="color:var(--red)">-- bpm</div>
+      <div class="bb-stat-l">Heart Rate</div>
+    </div>
+    <div class="bb-div"></div>
+    <div class="bb-stat">
+      <div class="bb-stat-v" id="bb-sig" style="color:var(--cyan)">-- dBm</div>
+      <div class="bb-stat-l">Signal</div>
+    </div>
+    <div class="bb-div"></div>
+    <div class="bb-stat">
+      <div class="bb-stat-v" id="bb-temp" style="color:var(--amber)">-- °C</div>
+      <div class="bb-stat-l">CPU Temp</div>
+    </div>
+    <div class="bb-div"></div>
+    <div class="bb-stat">
+      <div class="bb-stat-v" id="bb-pkts" style="color:var(--violet)">--</div>
+      <div class="bb-stat-l">BLE Packets</div>
+    </div>
+    <div class="bb-div"></div>
+    <div class="bb-stat">
+      <div class="bb-stat-v" id="bb-up" style="color:var(--blue)">-- m</div>
+      <div class="bb-stat-l">Uptime</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<script>
+// ═══════════════════════════════
+//  VIDEO
+// ═══════════════════════════════
+const vid = document.getElementById('vid-bg');
+vid.addEventListener('canplay', () => { vid.play().catch(()=>{}); vid.classList.add('ready'); });
+vid.addEventListener('ended', () => {
+  document.getElementById('vid-end-tint').style.background = 'rgba(0,0,0,0.4)';
+});
+
+// ═══════════════════════════════
+//  CLOCK
+// ═══════════════════════════════
+function tick(){ document.getElementById('tb-clock').textContent = new Date().toLocaleTimeString('en-IN',{hour12:false}); }
+setInterval(tick,1000); tick();
+
+// ═══════════════════════════════
+//  TOAST
+// ═══════════════════════════════
+let toastTimer;
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2400);
+}
+
+// ═══════════════════════════════
+//  BATTERY RING
+// ═══════════════════════════════
+const CIRC = 2 * Math.PI * 88; // ~553
+function setRing(pct) {
+  const offset = CIRC - (pct / 100) * CIRC;
+  document.getElementById('ring-fill').style.strokeDashoffset = offset;
+  document.getElementById('ring-pct').textContent = pct;
+}
+
+// ═══════════════════════════════
+//  STATS UPDATE
+// ═══════════════════════════════
+function updateBatt(v) {
+  const c = v > 60 ? 'var(--green)' : v > 20 ? 'var(--amber)' : 'var(--red)';
+  const el = document.getElementById('batt-v');
+  el.childNodes[0].nodeValue = v; el.style.color = c;
+  const f = document.getElementById('batt-fill');
+  f.style.width = v + '%'; f.style.background = c;
+  document.getElementById('bb-batt').textContent = v + '%';
+  document.getElementById('bb-batt').style.color = c;
+  setRing(v);
+}
+
+// ═══════════════════════════════
+//  SIMULATION
+// ═══════════════════════════════
+let simBatt=78, simUp=0, simPkts=0, hrHistory=[];
+
+function startSim() {
+  document.getElementById('status-pill').textContent = '● SIM MODE';
+  document.getElementById('status-pill').className = 'tb-pill pill-sim';
+  document.getElementById('conn-btn').textContent = '✕ Disconnect';
+  document.getElementById('conn-btn').className = 'conn-btn connected';
+
+  setInterval(() => {
+    simBatt = Math.max(0, simBatt - 0.02);
+    simUp++; simPkts += Math.floor(Math.random()*3)+1;
+
+    const batt = Math.round(simBatt);
+    updateBatt(batt);
+
+    const sig = -65 - Math.round(Math.random()*8);
+    document.getElementById('sig-v').childNodes[0].nodeValue = sig;
+    document.getElementById('bb-sig').textContent = sig + ' dBm';
+
+    document.getElementById('up-v').childNodes[0].nodeValue = simUp;
+    document.getElementById('bb-up').textContent = simUp + ' m';
+
+    const temp = (27.5 + Math.random()).toFixed(1);
+    document.getElementById('ct-v').childNodes[0].nodeValue = temp;
+    document.getElementById('bb-temp').textContent = temp + ' °C';
+
+    const hr = 72 + Math.round(Math.sin(Date.now()/8000)*8 + (Math.random()-.5)*4);
+    document.getElementById('hr-v').textContent = hr + ' bpm';
+    document.getElementById('bb-hr').textContent = hr + ' bpm';
+    hrHistory.push(hr); if(hrHistory.length>40)hrHistory.shift();
+    drawSpark(hrHistory);
+
+    document.getElementById('sk-v').textContent = (34.2 + Math.random()*.4).toFixed(1) + ' °C';
+
+    const ml = -42 - Math.round(Math.random()*10);
+    document.getElementById('ml-v').textContent = ml + ' dB';
+
+    document.getElementById('pk-v').textContent = simPkts.toLocaleString();
+    document.getElementById('bb-pkts').textContent = simPkts.toLocaleString();
+
+    drawOLED(oledMode);
+  }, 1000);
+}
+
+// ═══════════════════════════════
+//  SPARKLINE
+// ═══════════════════════════════
+function drawSpark(data) {
+  const c = document.getElementById('hr-spark');
+  if(!c) return;
+  c.width = c.offsetWidth; c.height = c.offsetHeight;
+  const ctx = c.getContext('2d'), W=c.width, H=c.height;
+  ctx.clearRect(0,0,W,H);
+  if(data.length<2) return;
+  const mn=Math.min(...data)-4, mx=Math.max(...data)+4;
+  const grd=ctx.createLinearGradient(0,0,W,0);
+  grd.addColorStop(0,'rgba(239,68,68,.5)'); grd.addColorStop(1,'rgba(239,68,68,.9)');
+  ctx.beginPath();
+  data.forEach((v,i)=>{ const x=(i/(data.length-1))*W,y=H-((v-mn)/(mx-mn))*H; i?ctx.lineTo(x,y):ctx.moveTo(x,y); });
+  ctx.strokeStyle=grd; ctx.lineWidth=1.5; ctx.stroke();
+  ctx.lineTo(W,H); ctx.lineTo(0,H); ctx.closePath();
+  ctx.fillStyle='rgba(239,68,68,.07)'; ctx.fill();
+}
+
+// ═══════════════════════════════
+//  OLED
+// ═══════════════════════════════
+let oledMode = 'clock';
+function setOled(m, btn) {
+  oledMode = m;
+  document.querySelectorAll('.oled-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  drawOLED(m);
+}
+function drawOLED(mode) {
+  const c=document.getElementById('oled-canvas');
+  if(!c) return;
+  const ctx=c.getContext('2d'), W=432, H=216;
+  ctx.fillStyle='#000'; ctx.fillRect(0,0,W,H);
+  const now=new Date();
+
+  if(mode==='clock') {
+    ctx.fillStyle='#00ffff'; ctx.font='bold 54px monospace';
+    ctx.fillText(now.toLocaleTimeString('en-IN',{hour12:false}),24,88);
+    ctx.font='18px monospace'; ctx.fillStyle='#005566';
+    ctx.fillText(now.toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short'}),24,126);
+    ctx.fillStyle='#006677'; ctx.fillText('HYRAX AI',24,162);
+    const b=Math.round(simBatt);
+    ctx.strokeStyle='#00ffff'; ctx.lineWidth=3; ctx.strokeRect(345,22,74,38);
+    ctx.fillStyle=b>60?'#00ff88':b>20?'#ffaa00':'#ff3300';
+    ctx.fillRect(349,26,(66*(b/100)),30);
+    ctx.fillStyle='#00ffff'; ctx.font='14px monospace'; ctx.fillText(b+'%',356,46);
+  } else if(mode==='vitals') {
+    ctx.fillStyle='#00ffff'; ctx.font='16px monospace'; ctx.fillText('VITALS',24,36);
+    ctx.fillStyle='#ff4444'; ctx.font='bold 32px monospace';
+    ctx.fillText((72+Math.round(Math.random()*4))+' bpm',24,90);
+    ctx.fillStyle='#00ffff'; ctx.font='16px monospace'; ctx.fillText('❤ HEART RATE',24,62);
+    ctx.fillStyle='#ffaa00'; ctx.font='bold 24px monospace'; ctx.fillText('34.4 °C',24,155);
+    ctx.fillStyle='#00ffff'; ctx.font='16px monospace'; ctx.fillText('SKIN TEMP',24,128);
+    ctx.fillStyle='#00ff88'; ctx.font='bold 22px monospace'; ctx.fillText(Math.round(simBatt)+'%',300,90);
+    ctx.fillStyle='#00ffff'; ctx.font='14px monospace'; ctx.fillText('BATT',300,62);
+  } else {
+    ctx.fillStyle='#00ffff'; ctx.font='bold 26px monospace'; ctx.fillText('HYRA AI',24,42);
+    ctx.fillStyle='#004455'; ctx.fillRect(0,58,W,2);
+    ctx.fillStyle='#00bbcc'; ctx.font='16px monospace';
+    const st=['Ready…','Listening…','Processing…','Hello Srujan!'];
+    ctx.fillText('> '+st[Math.floor(Date.now()/2000)%st.length],24,96);
+    ctx.fillStyle='#00ffff'; ctx.font='14px monospace';
+    ctx.fillText('MIC:ON   SPK:ON',24,140);
+    ctx.fillText('SIG:-67dBm',24,172);
+    ctx.fillText('UP:'+simUp+'m',24,204);
+  }
+}
+setInterval(()=>drawOLED(oledMode),500);
+
+// ═══════════════════════════════
+//  WEBSERIAL CONNECTION
+// ═══════════════════════════════
+let port=null, deviceConnected=false;
+
+function logConn(msg,type='inf'){
+  const log=document.getElementById('conn-log');
+  const ts=new Date().toLocaleTimeString('en-IN',{hour12:false});
+  const d=document.createElement('div'); d.className='log-l '+type;
+  d.innerHTML=`<span class="ts">${ts}</span><span class="m">${msg}</span>`;
+  log.appendChild(d); log.scrollTop=log.scrollHeight;
+  if(log.children.length>12)log.removeChild(log.firstChild);
+}
+
+async function connectDevice(){
+  const btn=document.getElementById('conn-btn');
+  if(deviceConnected){ await doDisconnect(); return; }
+  if(!('serial' in navigator)){
+    logConn('WebSerial unavailable — Chrome/Edge only','err');
+    return;
+  }
+  btn.textContent='Connecting…';
+  try {
+    port=await navigator.serial.requestPort();
+    await port.open({baudRate:115200});
+    deviceConnected=true;
+    btn.textContent='✕ Disconnect'; btn.className='conn-btn connected';
+    document.getElementById('status-pill').textContent='● LIVE';
+    document.getElementById('status-pill').className='tb-pill pill-live';
+    logConn('Connected @ 115200 baud','ok');
+    toast('HyraX Band connected!');
+  } catch(e){
+    btn.textContent='⚡ Connect via USB Serial';
+    logConn('Failed: '+e.message,'err');
+  }
+}
+
+async function doDisconnect(){
+  deviceConnected=false;
+  if(port){ try{ await port.close(); }catch(e){} port=null; }
+  document.getElementById('conn-btn').textContent='⚡ Connect via USB Serial';
+  document.getElementById('conn-btn').className='conn-btn';
+  document.getElementById('status-pill').textContent='● SIM MODE';
+  document.getElementById('status-pill').className='tb-pill pill-sim';
+  logConn('Disconnected','inf');
+}
+
+// ═══════════════════════════════
+//  WAVEFORM
+// ═══════════════════════════════
+let micStream=null,audioCtx=null,analyser=null,micActive=false;
+
+function toggleMic(){
+  const btn=document.getElementById('mic-btn');
+  if(micActive){ stopMic(); btn.textContent='🎙 OFF'; }
+  else { startMic(); btn.textContent='⏹ ON'; }
+}
+
+async function startMic(){
+  try{
+    micStream=await navigator.mediaDevices.getUserMedia({audio:true});
+    audioCtx=new AudioContext(); analyser=audioCtx.createAnalyser(); analyser.fftSize=512;
+    audioCtx.createMediaStreamSource(micStream).connect(analyser);
+    micActive=true; drawWave();
+  } catch(e){ micActive=true; drawSimWave(); }
+}
+
+function stopMic(){
+  micActive=false;
+  if(micStream){micStream.getTracks().forEach(t=>t.stop());micStream=null;}
+  if(audioCtx){audioCtx.close();audioCtx=null;}
+  const c=document.getElementById('wave-canvas');
+  c.getContext('2d').clearRect(0,0,c.width,c.height);
+}
+
+function drawWave(){
+  if(!micActive)return;
+  const c=document.getElementById('wave-canvas');
+  c.width=c.offsetWidth; c.height=c.offsetHeight;
+  const ctx=c.getContext('2d'),W=c.width,H=c.height;
+  const data=new Uint8Array(analyser?analyser.frequencyBinCount:256);
+  if(analyser)analyser.getByteTimeDomainData(data);
+  ctx.fillStyle='rgba(0,0,0,.2)'; ctx.fillRect(0,0,W,H);
+  const grd=ctx.createLinearGradient(0,0,W,0);
+  grd.addColorStop(0,'#22d3ee'); grd.addColorStop(.5,'#8b5cf6'); grd.addColorStop(1,'#22d3ee');
+  ctx.strokeStyle=grd; ctx.lineWidth=1.5; ctx.beginPath();
+  const step=W/data.length;
+  data.forEach((v,i)=>{ const x=i*step,y=(v/255)*H; i?ctx.lineTo(x,y):ctx.moveTo(x,y); });
+  ctx.stroke();
+  requestAnimationFrame(drawWave);
+}
+
+function drawSimWave(){
+  if(!micActive)return;
+  const c=document.getElementById('wave-canvas');
+  c.width=c.offsetWidth; c.height=c.offsetHeight;
+  const ctx=c.getContext('2d'),W=c.width,H=c.height,t=Date.now()*.003;
+  ctx.fillStyle='rgba(0,0,0,.2)'; ctx.fillRect(0,0,W,H);
+  const grd=ctx.createLinearGradient(0,0,W,0);
+  grd.addColorStop(0,'#22d3ee'); grd.addColorStop(.5,'#8b5cf6'); grd.addColorStop(1,'#22d3ee');
+  ctx.strokeStyle=grd; ctx.lineWidth=1.5; ctx.beginPath();
+  for(let x=0;x<W;x++){
+    const y=H/2+Math.sin(x*.05+t)*14*Math.random()+Math.sin(x*.02+t*.7)*8;
+    x?ctx.lineTo(x,y):ctx.moveTo(x,y);
+  }
+  ctx.stroke();
+  requestAnimationFrame(drawSimWave);
+}
+
+// ═══════════════════════════════
+//  CONTROLS
+// ═══════════════════════════════
+function togCtrl(el, name){
+  el.classList.toggle('on');
+  toast((el.classList.contains('on')?'Enabled':'Disabled')+': '+name);
+}
+
+function qa(name, icon){
+  const msgs = {
+    'Wake Device': 'Wake signal sent to band',
+    'Sleep Mode': 'Band entering sleep mode',
+    'Flash OTA': 'OTA flash — coming soon',
+    'Soft Reset': 'Soft reset command sent',
+    'Announce': 'Pushed announcement to speaker',
+    'Locate Me': 'Location broadcast active',
+  };
+  toast(icon + ' ' + (msgs[name]||name));
+  logConn(msgs[name]||name, 'ok');
+}
+
+// ═══════════════════════════════
+//  INIT
+// ═══════════════════════════════
+window.addEventListener('DOMContentLoaded', () => {
+  drawOLED('clock');
+  setTimeout(() => {
+    startSim();
+    logConn('Simulation mode active','ok');
+  }, 800);
+});
+</script>
+</body>
+</html>
